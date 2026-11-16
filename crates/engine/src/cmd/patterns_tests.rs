@@ -1129,6 +1129,35 @@ fn copies_of_a_boss_and_a_cut_up_to_its_top_make_both_copies() {
     }
 }
 
+/// #17692: a pocket cut up to a plate's top, picked just beside the pocket, then a chamfer on the
+/// pocket's rim that takes the top away under that pick. Patterned or mirrored together, each
+/// copy of the pocket still ends at the top: the chamfer's slanted face, now at the pick, made the
+/// copies run to it instead and fail ("the profile reaches past the To face").
+#[test]
+fn copies_of_a_cut_up_to_a_face_a_later_feature_cut_away_at_the_pick_end_at_that_face() {
+    for (command, params) in [
+        ("solid.pattern.rectangular", json!({"features": ["Pocket", "Rim"], "dir1": [1, 0, 0], "count1": 2, "spacing1": 42})),
+        ("solid.mirror", json!({"features": ["Pocket", "Rim"], "plane": {"origin": [42, 0, 0], "normal": [1, 0, 0]}})),
+    ] {
+        let mut s = Session::default();
+        run(&mut s, "solid.box", json!({"length": 84, "width": 42, "height": 5, "corner": [0, 0, 0], "body_name": "Plate"}));
+        run(&mut s, "sketch.create", json!({"plane": "XY", "name": "C"}));
+        run(&mut s, "sketch.rectangle.two_point", json!({"p0": [3, 3], "p1": [39, 39]}));
+        run(&mut s, "sketch.finish", json!({}));
+        run(&mut s, "solid.extrude", json!({"sketch": "C", "profiles": [0], "name": "Pocket", "operation": "cut", "to": [40, 21, 5]}));
+        run(&mut s, "solid.chamfer", json!({"edges": [[39, 21, 5]], "distance": 2, "name": "Rim"}));
+        let plate = 84.0 * 42.0 * 5.0;
+        // The 36 × 36 pocket through the 5 mm plate, and the 2 mm chamfer along one 36 mm edge.
+        let removed = 36.0 * 36.0 * 5.0 + 0.5 * 2.0 * 2.0 * 36.0;
+        let one = volume(&mut s);
+        assert!(rel(one, plate - removed) < 1e-6, "{command}: one cell {one} mm³, expected {}", plate - removed);
+        let r = run(&mut s, command, params);
+        assert!(r["error"].is_null(), "{command}: {r}");
+        let both = volume(&mut s);
+        assert!(rel(both, plate - 2.0 * removed) < 1e-6, "{command}: {both} mm³, expected {}", plate - 2.0 * removed);
+    }
+}
+
 /// #14305: in a component, a pattern or mirror of two cuts makes the copies of both. The first
 /// cut's copies used to hand the plate back outside its component, so the second cut's copies
 /// found no body there ("there is no body to cut or intersect").

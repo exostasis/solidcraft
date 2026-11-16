@@ -9021,6 +9021,22 @@ fn moved_blend(src: &Feature, m: &Mat) -> Feature {
     copy
 }
 
+/// Where a copy of `src` looks for its face named `name`: `q`, the point where `src` found that
+/// face before it ran, unless a later feature has put another face there. A chamfer around a
+/// pocket cut up to the top takes the top away under the pocket's pick (#17692): the copies
+/// would run to the chamfer instead, so they look for the named face again, from `q`. A point
+/// left on the named face, or in the air (the face cut away by `src` itself, #15054), stays.
+fn copy_face_point(st: &ModelState, src: &Feature, name: &str, q: Vec3) -> Vec3 {
+    if name.is_empty() {
+        return q;
+    }
+    let Some((bi, fi)) = face_at(st, q, None) else { return q };
+    if st.bodies.get(bi).is_none_or(|b| crate::name_lookup::face_has_name(b, fi, name)) {
+        return q;
+    }
+    crate::name_lookup::locate_face_on_body(st, src.kind.face_body(), name, q).map_or(q, |hit| hit.pick_point(st, q))
+}
+
 /// Apply transformed copies of the tools of `features` (patterns, mirrors).
 fn replay(
     doc: &Document,
@@ -9242,8 +9258,8 @@ fn replay(
             let moved = match st.named_faces.get(&src.id) {
                 Some(points) => {
                     let mut g = (*src).clone();
-                    for (p, q) in g.kind.face_points_mut().into_iter().zip(points) {
-                        *p = *q;
+                    for (k, (p, q)) in g.kind.face_points_mut().into_iter().zip(points).enumerate() {
+                        *p = copy_face_point(st, src, src.face_names.get(k).map_or("", String::as_str), *q);
                     }
                     Some(g)
                 }
